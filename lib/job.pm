@@ -9,7 +9,7 @@ use JSON;
 use Loghandler;
 use importStatus;
 
-use parent commonTongue;
+use parent ARLObject;
 
 sub new
 {
@@ -122,8 +122,8 @@ sub runJob
     my %fileOutput = ();
     my %fileOutputIDMap = ();
     # Convert the marc, store results in the DB, weeding out errors
-    my $before = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/before.txt");
-    my $after = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/after.txt");
+    my $before = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/logs/before.txt"); # todo: fix these hardcoded paths.
+    my $after = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/logs/after.txt"); # todo: fix these hardcoded paths
     while($#importIDs > -1)
     {
         $recordTracker{"total"}++;
@@ -267,6 +267,46 @@ sub runJob
     writeOutputMARC($self, \%fileOutput, \%fileOutputIDMap);
     my $totalLine = "Job's Done; Total: " . $recordTracker{"total"} . " success: " . $recordTracker{"convertedSuccess"} . " fail: " . $recordTracker{"convertedFailed"};
     finishJob($self, $totalLine);
+}
+
+sub startJob
+{
+    my $self = shift;
+    my $query =
+        "UPDATE
+    ".$self->{prefix}.
+            "_job
+    set
+    start_time = NOW()
+    where
+    id = ?";
+    my @vals = ($self->{job});
+    $self->doUpdateQuery($query, undef, \@vals);
+}
+
+sub updateJobStatus
+{
+    my $self = shift;
+    my $action = shift;
+    my $status = shift || 'processing';
+    my $query =
+        "UPDATE
+    ".$self->{prefix}.
+            "_job
+    set
+    status = ?,
+    current_action = ?
+    where
+    id = ?";
+    my @vals = ($status, $action, $self->{job});
+    $self->doUpdateQuery($query, undef, \@vals);
+}
+
+sub finishJob
+{
+    my $self = shift;
+    my $finalString = shift;
+    updateJobStatus($self, $finalString, 'finished');
 }
 
 sub writeOutputMARC
@@ -831,7 +871,7 @@ sub removeFilesFromDisk
             @files = @{$self->dirtrav(\@files, $value)};
             foreach(@files)
             {
-                my $done = seeIfFileIsCompletelyLoaded($self, $_);
+                my $done = checkIfFileIsCompletelyLoaded($self, $_);
                 print "Removing '$_'\n" if ($done && $self->{debug});
                 unlink $_ if $done; #delete the file from disk when all rows in the database claim to be loaded
             }
@@ -839,7 +879,7 @@ sub removeFilesFromDisk
     }
 }
 
-sub seeIfFileIsCompletelyLoaded
+sub checkIfFileIsCompletelyLoaded
 {
     my $self = shift;
     my $filename = shift;
@@ -991,52 +1031,11 @@ sub getImportIDsNotLoaded
     return \%ret;
 }
 
-sub startJob
-{
-    my $self = shift;
-    my $query =
-    "UPDATE
-    ".$self->{prefix}.
-    "_job
-    set
-    start_time = NOW()
-    where
-    id = ?";
-    my @vals = ($self->{job});
-    $self->doUpdateQuery($query, undef, \@vals);
-}
-
-sub updateJobStatus
-{
-    my $self = shift;
-    my $action = shift;
-    my $status = shift || 'processing';
-    my $query =
-    "UPDATE
-    ".$self->{prefix}.
-    "_job
-    set
-    status = ?,
-    current_action = ?
-    where
-    id = ?";
-    my @vals = ($status, $action, $self->{job});
-    $self->doUpdateQuery($query, undef, \@vals);
-}
-
-sub finishJob
-{
-    my $self = shift;
-    my $finalString = shift;
-    updateJobStatus($self, $finalString, 'finished');
-}
-
 sub DESTROY
 {
     my ($self) = @_[0];
     $self->{extPG}->breakdown() if $self->{extPG};
     ## call destructor
 }
-
 
 1;

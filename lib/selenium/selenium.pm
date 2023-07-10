@@ -1,11 +1,11 @@
 #!/usr/bin/perl
 
-package dataHandler;
+package selenium;
 
+use lib qw(./ ../);
 use pQuery;
 use Try::Tiny;
 use Data::Dumper;
-use lib qw(./); 
 use Archive::Zip;
 use MARC::Record;
 use MARC::File;
@@ -13,7 +13,8 @@ use MARC::File::XML (BinaryEncoding => 'utf8');
 use MARC::File::USMARC;
 use Unicode::Normalize;
 use File::Path qw(make_path remove_tree);
-use parent commonTongue;
+
+use parent ARLObject;
 
 our %filesOnDisk = ();
 sub new
@@ -76,13 +77,13 @@ sub _fillVars
     source.scrape_img_folder
     from
     ".$self->{prefix}.
-    "_cluster cluster
+        "_cluster cluster
     join
     ".$self->{prefix}.
-    "_client client on (client.cluster = cluster.id)
+        "_client client on (client.cluster = cluster.id)
     join
     ".$self->{prefix}.
-    "_source source on (source.client = client.id)
+        "_source source on (source.client = client.id)
     where
     source.id = '".$self->{sourceID}."'";
 
@@ -112,7 +113,7 @@ sub waitForPageLoad
     # print "Page done: $done\n";
     my $stop = 0;
     my $tries = 0;
-    
+
     while(!$done && !$stop)
     {
         $done = $self->{driver}->execute_script("return document.readyState === 'complete';");
@@ -149,7 +150,7 @@ sub handleLoginPage
     my $userBoxID = shift;
     my $passBoxID = shift;
     my $errorLoginString = shift;
-    
+
     my $worked;
     my $submitFunction = "
         var thisElem;
@@ -363,7 +364,7 @@ sub handleDOMTriggerOrSetValue
     my $self = shift;
     my $type = shift; # 'setval' or 'action'
     my $DOMID = shift; # this can be null if you supply $domType and $elementProperty instead
-    my $data = shift;
+    my $data = shift; # data for input or function() ie click()
     my $domType = shift; # "input" or "textbox", etc.
     my $elementAttributesRef = shift;
     my $elementTextContentMatch = shift;
@@ -392,7 +393,7 @@ sub handleDOMTriggerOrSetValue
             }
             return 0;
             ";
-        
+
         $self->{log}->addLine("Executing: $js");
         $worked = $self->{driver}->execute_script($js);
         waitForPageLoad($self);
@@ -435,16 +436,16 @@ sub findElementByAttributes
                     var rgxp = new RegExp(attribs[key],'i');
                     if(doms[i].getAttribute(key).match(rgxp))
                     {";
-                    if($elementTextContentMatch)
-                    {
-                        $js.="
+        if($elementTextContentMatch)
+        {
+            $js.="
                         if(!doms[i].textContent.match(/$elementTextContentMatch/i))
                         {
                             matched = 0;
                             break;
                         }";
-                    }
-                    $js.="
+        }
+        $js.="
                         matched = 1;
                     }
                     else
@@ -457,13 +458,13 @@ sub findElementByAttributes
             if(matched)
             {
                 ";
-                if($elementAction)
-                {
-                    $js .= "doms[i].$elementAction;
+        if($elementAction)
+        {
+            $js .= "doms[i].$elementAction;
                     return 1;
                     ";
-                }
-                $js.="
+        }
+        $js.="
                 if(doms[i].getAttribute('$returnProp'))
                 {
                     return doms[i].getAttribute('$returnProp');
@@ -527,12 +528,14 @@ sub doWebActionAfewTimes
     $actionCode = '$result = ' . $actionCode . ";";
     my $loops = 0;
     $self->{log}->addLine("Executing: $actionCode");
-    # return handleAnchorClick($self, "/Insights", "Title status", 1);
     while( ($retryCount > $loops) && !$result )
     {
         eval $actionCode;
         $loops++;
     }
+
+    # an error is expected which is why we do this in a loop. 
+    # if it turns out we have a postive result then the error should be cleared.
     $self->setError(0) if ($result);
     return $result;
 }
@@ -575,6 +578,7 @@ sub escapeStringForJSRegEX
     $string =~ s/\)/\\\)/g;
     return $string;
 }
+
 sub stringContains
 {
     my $self = shift;
@@ -709,7 +713,7 @@ sub readSaveFolder
     opendir(DIR,$pwd) or die "Cannot open $pwd\n";
     my @thisdir = readdir(DIR);
     closedir(DIR);
-    foreach my $file (@thisdir) 
+    foreach my $file (@thisdir)
     {
         # print "Checking: $file\n";
         if( ($file ne ".") && ($file ne "..") && !($file =~ /\.part/g))  # ignore firefox "part files"
@@ -815,6 +819,8 @@ sub extractCompressedFile
             if($extract && !$fileDedupe{$thisMember})
             {
                 my $outputMemberFilename = $thisMember;
+
+                # get the string ready for js regex
                 $outputMemberFilename =~ s/\?//g;
                 $outputMemberFilename =~ s/\///g;
                 $outputMemberFilename =~ s/\[//g;
@@ -1169,9 +1175,9 @@ sub updateThisJobStatus
     my $action = shift;
     my $status = shift || 'processing';
     my $query =
-    "UPDATE
+        "UPDATE
     ".$self->{prefix}.
-    "_job
+            "_job
     set
     status = ?,
     current_action = ?
@@ -1241,9 +1247,9 @@ sub ensureFolderExists
     {
         print "creating: '" . $path. "'\n";
         make_path($path, {
-        verbose => 1,
-        chmod => $mode,
-        mode => $mode,
+            verbose => 1,
+            chmod => $mode,
+            mode => $mode,
         });
     }
 }
@@ -1311,9 +1317,10 @@ sub DESTROY
 
 sub hammerTime
 {
+
     my $self = shift;
     my $hashID = shift;
-my $js = "
+    my $js = "
 function triggerEventsOnElement(element, hash) {
     
     var matched = 0;
@@ -1346,16 +1353,21 @@ function dispatchCustomEvents(element) {
     console.log(document.activeElement);
     element.tabIndex = '-1';
     element.focus();
+
+
     element.dispatchEvent(new CustomEvent('focus'));
     element.dispatchEvent(new CustomEvent('focusin'));
     element.dispatchEvent(new CustomEvent('enter'));
     element.dispatchEvent(new CustomEvent('pointerup'));
     element.dispatchEvent(new CustomEvent('pointerover'));
+
     var evt = new CustomEvent('keypress');
     evt.which = 40;
     evt.keyCode = 40;
     element.dispatchEvent(evt);
     element.dispatchEvent(new CustomEvent('change'));
+
+
     element.dispatchEvent(new PointerEvent('pointerrawupdate', {
         'width': element.getBoundingClientRect().left + window.scrollX,
         'height': element.getBoundingClientRect().top + window.scrollY
@@ -1392,7 +1404,10 @@ function dispatchCustomEvents(element) {
         'width': element.getBoundingClientRect().left + window.scrollX,
         'height': element.getBoundingClientRect().top + window.scrollY
     }));
+
+
     element.dispatchEvent(new WheelEvent(''));
+
     element.dispatchEvent(new FocusEvent('focusout'));
     element.dispatchEvent(new FocusEvent('focus'));
     element.dispatchEvent(new MouseEvent('mouseover', {'bubbles': true, view: window}));
@@ -1400,6 +1415,7 @@ function dispatchCustomEvents(element) {
     element.dispatchEvent(new MouseEvent('mousemove', {'bubbles': true, view: window}));
     document.dispatchEvent(new MouseEvent('scroll', {'bubbles': true, view: window}));
     element.dispatchEvent(new MouseEvent('mousemove'));
+
     element.dispatchEvent(new MouseEvent('focus', {'bubbles': true, view: window}));
     evt = new CustomEvent('click');
     element.dispatchEvent(evt);
@@ -1421,9 +1437,9 @@ function dispatchCustomEvents(element) {
 triggerEventsOnElement(document.getElementsByTagName('div'),'$hashID');
 
 ";
-    
+
     return $js;
-    
+
 }
 
 1;

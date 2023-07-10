@@ -11,7 +11,7 @@ use Encode;
 
 use Loghandler;
 
-use parent commonTongue;
+use parent ARLObject;
 
 sub new
 {

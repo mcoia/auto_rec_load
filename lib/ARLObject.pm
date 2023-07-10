@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-package commonTongue;
+package ARLObject;
 
 use lib qw(./);
 use Data::Dumper;

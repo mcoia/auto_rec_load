@@ -5,7 +5,8 @@ package importStatus;
 use lib qw(./);
 use Data::Dumper;
 use marcEditor;
-use parent commonTongue;
+
+use parent ARLObject;
 
 sub new
 {

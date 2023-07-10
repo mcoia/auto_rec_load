@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 
-package dataHandlerProquest;
+package seleniumProquest;
 
 use lib qw(./);
-
 
 use pQuery;
 use Try::Tiny;
 use Data::Dumper;
-use parent dataHandler;
+
+use parent selenium;
 
 sub scrape
 {
