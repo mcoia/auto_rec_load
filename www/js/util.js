@@ -72,7 +72,7 @@ function htmlEscape(str)
             .replace(/>/g, '&gt;')
             .replace(/\\n/g,'&NewLine;')
             .replace(/ /g, '&nbsp;')
-            // .replace(/\\/g, '!!backslash!!')
+            .replace(/\\/g, '!!backslash!!')
             // .replace(/@/g, '&commat;') // php doesn't unescape this https://www.php.net/manual/en/function.htmlspecialchars-decode.php
             ;
 }

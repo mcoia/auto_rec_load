@@ -82,7 +82,8 @@ sub _fillVars
             # Clean some of the json up
             @row[0] =~ s/\n/ /g;
             @row[0] =~ s/\s/ /g;
-            $self->{json} = decode_json( @row[0] );
+            $self->{log}->addLine(@row[0]);
+            $self->{json} = decode_json(@row[0]);
             $self->{dbhost} = @row[1];
             $self->{dbdb} = @row[2];
             $self->{dbport} = @row[3];
