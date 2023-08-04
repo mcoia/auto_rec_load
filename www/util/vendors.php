@@ -41,7 +41,7 @@ class vendorsUI
 		}
         else if(isset($this->uri['getjson']))
         {
-            If(isset($this->uri['additionalsearch']) && isset($this->uri['searchstring']) && strlen($this->uri['searchstring']) > 1 )
+            if(isset($this->uri['additionalsearch']) && isset($this->uri['searchstring']) && strlen($this->uri['searchstring']) > 1 )
 			{	
 				$ret = $this->getSearchTable($this->uri['searchstring']);
 			}
