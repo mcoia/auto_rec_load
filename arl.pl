@@ -783,7 +783,6 @@ sub runProcessMarcJobs
         my $perl = '$tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID);';
         # $tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID); # debug 
         print $perl . "\n" if $debug;
-
         # Instantiate the Job
         {
             local $@;

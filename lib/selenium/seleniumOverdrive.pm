@@ -107,7 +107,7 @@ sub waitAndDownloadExpressMARC
 
     my $searchCount = 0;
     my $maxSearchCount = 100;
-    my $secondsUntilNextCheckCycle = 5;
+    my $secondsUntilNextCheckCycle = 15;
 
     $self->takeScreenShot('waitAndDownloadExpressMARC');
     $self->updateThisJobStatus("waitAndDownloadExpressMARC");
@@ -161,9 +161,7 @@ sub waitAndDownloadExpressMARC
                     $self->{log}->addLine("Downloading File");
                     $self->addTrace("scrape", "Downloading File");
                     $self->updateThisJobStatus("Downloading File");
-                    # $self->{driver}->execute_script("document.getElementsByClassName('x-toolbar')[0].getElementsByClassName('downloadfilesbutton')[0].click();");
                     $self->readSaveFolder(1); # read the contents of the download folder to get a baseline
-                    # $self->handleDOMTriggerOrSetValue('action', 'submitCreateFile', 'click()');
                     $self->{driver}->execute_script("document.getElementsByClassName('downloadfilesbutton')[0].click();");
                     $self->takeScreenShot("file_download");
 
@@ -205,7 +203,7 @@ sub getTitleIDs
     #
     ##############
     my $continue = $self->doWebActionAfewTimes('handleAnchorClick($self, "/Insights", "Title status", 1)', 4);
-    
+
     print "Clicked on Insights\n" if ($self->{debug});
     print "Continue: $continue\n";
 

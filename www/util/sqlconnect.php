@@ -226,7 +226,7 @@ class sqlconnect{
 	function selectCorrectDatabase()
 	{
         $config = array();
-        $configFile = file_get_contents('auto_rec_load.conf');
+        $configFile = file_get_contents('arl.conf');
         $lines = explode("\n", $configFile);
         foreach($lines as $line)
         {

@@ -36,15 +36,12 @@ class vendorsUI
             }
             else if(isset($this->uri['submitjson']) && isset($_POST['payload']))
             {
-//echo "<xmp>raw: " .  $_POST['payload'] ."</xmp>";
-// echo "<pre>" . html_entity_decode(htmlspecialchars_decode($_POST['payload']))   ."</pre>";
-// $this->updateJSONDetails($this->uri['submitjson'], html_entity_decode(html_entity_decode(preg_replace('/%20/',' ', $_POST['payload']) ) ));
-               echo $this->updateJSONDetails($this->uri['submitjson'], html_entity_decode(htmlspecialchars_decode($_POST['payload'])));
+              echo $this->updateJSONDetails($this->uri['submitjson'], html_entity_decode(htmlspecialchars_decode($_POST['payload'])));
             }
 		}
         else if(isset($this->uri['getjson']))
         {
-            If(isset($this->uri['additionalsearch']) && isset($this->uri['searchstring']) && strlen($this->uri['searchstring']) > 1 )
+            if(isset($this->uri['additionalsearch']) && isset($this->uri['searchstring']) && strlen($this->uri['searchstring']) > 1 )
 			{	
 				$ret = $this->getSearchTable($this->uri['searchstring']);
 			}
@@ -251,6 +248,8 @@ class vendorsUI
 
     function updateJSONDetails($sourceID, $json)
     {
+        $json = preg_replace('/!!backslash!!/i',"\\\\", $json);
+        $json = preg_replace('/&#39;/i',"'", $json);
         $ret = "";
         $query = "update " . $this->tablePrefix ."source asource " .
         "set json_connection_detail = ? where id = ?";

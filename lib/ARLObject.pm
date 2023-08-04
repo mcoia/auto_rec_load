@@ -38,6 +38,7 @@ sub parseJSON
     my $self = shift;
     my $json = shift;
     addTrace($self, "parseJSON", "Parsing JSON init");
+    $self->{log}->addLine(Dumper($json));
     if( ref $json eq 'HASH' )
     {
         while ( (my $key, my $value) = each( %{$json} ) )
@@ -119,7 +120,13 @@ sub getDataFromDB
 sub addTrace
 {
     my $self = shift;
-    my $func = shift;
+    my $func = shift; 
+    
+    # https://www.oreilly.com/library/view/perl-cookbook/1565922433/ch10s05.html
+    # We can access the function name like this, no need to pass it in. 
+    # $this_function = (caller(0))[3]; 
+    # maybe something like=>  $func = shift || (caller(0))[3]; 
+    
     my $add = shift;
     $add = flattenArray($self, $add, 'string');
     my @t = @{$self->{trace}};
