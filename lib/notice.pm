@@ -373,6 +373,7 @@ sub getJobStats
     WHERE
     aj.id = ?
     GROUP BY 1,2,3,4,5,6";
+    $self->{log}->addLine($query);
     my @vars = ($self->{job});
     my @results = @{$self->getDataFromDB($query, \@vars)};
     foreach(@results)
@@ -463,6 +464,7 @@ sub getJobStats
         }
 
     }
+    $self->{log}->addLine(Dumper(\%ret));
     return \%ret;
 }
 
