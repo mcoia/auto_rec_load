@@ -107,7 +107,7 @@ sub waitAndDownloadExpressMARC
 
     my $searchCount = 0;
     my $maxSearchCount = 100;
-    my $secondsUntilNextCheckCycle = 5;
+    my $secondsUntilNextCheckCycle = 15;
 
     $self->takeScreenShot('waitAndDownloadExpressMARC');
     $self->updateThisJobStatus("waitAndDownloadExpressMARC");
