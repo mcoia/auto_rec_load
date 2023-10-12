@@ -573,6 +573,7 @@ sub getOverdriveURLTitleID
             else
             {
                 print "invalid url. Can't parse titleID\n" if ($self->{debug});
+                $self->{log}->addLine("invalid url. Can't parse titleID: [$overdriveURL]") if ($self->{debug});               
             }
 
         }

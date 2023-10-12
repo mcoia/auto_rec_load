@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use lib qw(./lib ./lib/selenium);
+use lib qw(./lib ./lib/selenium ./lib/cleanup);
 
 use Loghandler;
 use Data::Dumper;
@@ -30,6 +30,7 @@ use ARLObject;
 use marcEditor;
 use job;
 use notice;
+use OverdriveCleanup;
 
 # use sigtrap qw(handler cleanup normal-signals);
 
@@ -125,13 +126,14 @@ sub main
 
     defangRunJobID();
 
-    runTest() if ($action eq 'run_marc_test' && $testMARC); # runTest() will exit on it's own
+    runTestMarcManipulations() if ($action eq 'run_marc_test' && $testMARC); # will exit on it's own
 
     ########## Database  ####################         
     initDatabaseConnection();
     createDatabase() if ($recreateDB);
     seedDB($dbSeed) if $dbSeed;
     ########## Database  ####################         
+    runTest() if ($action eq 'run_test'); # will exit on it's own
 
     writePid();
 
@@ -227,7 +229,7 @@ sub initDatabaseConnection
 sub createDatabase
 {
 
-    print "Re-creting database\n";
+    print "Recreating database\n";
     my $query = "DROP TRIGGER IF EXISTS $stagingTablePrefix" . "_job_update";
     $log->addLine($query);
     $dbHandler->update($query);
@@ -270,7 +272,10 @@ sub createDatabase
     $query = "DROP TABLE IF EXISTS $stagingTablePrefix" . "_client";
     $log->addLine($query);
     $dbHandler->update($query);
-    $query = "DROP TABLE IF EXISTS $stagingTablePrefix" . "_cluster ";
+    $query = "DROP TABLE IF EXISTS $stagingTablePrefix" . "_cluster";
+    $log->addLine($query);
+    $dbHandler->update($query);
+    $query = "DROP TABLE IF EXISTS $stagingTablePrefix" . "_load_misc";
     $log->addLine($query);
     $dbHandler->update($query);
 
@@ -278,6 +283,7 @@ sub createDatabase
     # TABLES
     ##################
 
+    # Cluster 
     $query = "CREATE TABLE $stagingTablePrefix" . "_cluster (
         id int not null auto_increment,
         name varchar(100),
@@ -294,6 +300,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Client 
     $query = "CREATE TABLE $stagingTablePrefix" . "_client (
         id int not null auto_increment,
         name varchar(100),
@@ -306,6 +313,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Source 
     $query = "CREATE TABLE $stagingTablePrefix" . "_source (
         id int not null auto_increment,
         enabled boolean default true,
@@ -314,6 +322,7 @@ sub createDatabase
         type varchar(100),
         client int,
         perl_mod varchar(50),
+        perl_mod_cleanup varchar(50),
         marc_editor_function varchar(100),
         scrape_img_folder varchar(1000),
         scrape_interval varchar(100) DEFAULT '1 MONTH',
@@ -325,6 +334,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Job
     $query = "CREATE TABLE $stagingTablePrefix" . "_job (
         id int not null auto_increment,
         type varchar(100) DEFAULT 'processmarc',
@@ -343,6 +353,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # File_Track 
     $query = "CREATE TABLE $stagingTablePrefix" . "_file_track (
         id int not null auto_increment,
         fkey varchar(1000),
@@ -360,6 +371,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Output File Track
     $query = "CREATE TABLE $stagingTablePrefix" . "_output_file_track (
         id int not null auto_increment,
         filename varchar(1000),
@@ -369,6 +381,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Import Status 
     $query = "CREATE TABLE $stagingTablePrefix" . "_import_status (
         id int not null auto_increment,
         file int,
@@ -394,6 +407,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Notice Template 
     $query = "CREATE TABLE $stagingTablePrefix" . "_notice_template (
         id int not null auto_increment,
         name varchar(100),
@@ -410,6 +424,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Notice History 
     $query = "CREATE TABLE $stagingTablePrefix" . "_notice_history (
         id int not null auto_increment,
         notice_template int,
@@ -427,6 +442,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # Job Trace 
     $query = "CREATE TABLE $stagingTablePrefix" . "_job_trace (
         id int not null auto_increment,
         job int,
@@ -438,6 +454,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # www pages 
     $query = "CREATE TABLE $stagingTablePrefix" . "_wwwpages (
         id int not null auto_increment,
         name varchar(1000),
@@ -458,6 +475,7 @@ sub createDatabase
     # This table has it's seed data in db_seed.db
     # $dbHandler->update($query);
 
+    # www users 
     $query = "CREATE TABLE $stagingTablePrefix" . "_wwwusers (
         id int not null auto_increment,
         username varchar(100) not null,
@@ -480,6 +498,7 @@ sub createDatabase
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
 
+    # www action 
     $query = "CREATE TABLE $stagingTablePrefix" . "_wwwaction (
         id int not null auto_increment,
         type varchar(100) not null,
@@ -492,6 +511,18 @@ sub createDatabase
         ";
     $log->addLine($query) if $debug;
     $dbHandler->update($query);
+
+    # load misc 
+    $query = "CREATE TABLE $stagingTablePrefix" . "_load_misc(
+        id int not null auto_increment,
+        load_key varchar(100) not null,
+        value mediumtext not null,
+        PRIMARY KEY (id)
+        )
+        ";
+    $log->addLine($query) if $debug;
+    $dbHandler->update($query);
+
 
     ##################
     # FUNCTIONS
@@ -528,115 +559,6 @@ sub createDatabase
 }
 
 sub seedDB
-{
-    my $seedFile = shift;
-    my $readFile = new Loghandler($seedFile);
-    $log->addLine("Reading seeDB File $seedFile");
-    my @lines = @{$readFile->readFile()};
-
-    my $currTable = '';
-    my @cols = ();
-    my $insertQuery = "";
-    my @datavals = ();
-    foreach (@lines)
-    {
-        my $line = $_;
-        $line = trim($line);
-        if ($line =~ m/^\[/)
-        {
-            if (($#cols > -1) && ($#datavals > -1))
-            {
-                # execute the insert
-                @flatVals = ();
-                my $insertLog = $insertQuery;
-                foreach (@datavals)
-                {
-                    my @row = @{$_};
-                    $insertQuery .= "(";
-                    $insertLog .= "(";
-                    $insertQuery .= ' ? ,' foreach (@row);
-                    $insertLog .= " '$_' ," foreach (@row);
-                    $insertQuery = substr($insertQuery, 0, -1);
-                    $insertLog = substr($insertLog, 0, -1);
-                    $insertQuery .= "),\n";
-                    $insertLog .= "),\n";
-                    push @flatVals, @row;
-                }
-                $insertQuery = substr($insertQuery, 0, -2);
-                $insertLog = substr($insertLog, 0, -2);
-                $log->addLine($insertLog);
-                $dbHandler->updateWithParameters($insertQuery, \@flatVals);
-                undef @flatVals;
-                @datavals = ();
-            }
-            $log->addLine("seedDB: Detected client delcaration") if $debug;
-            $currTable = $line;
-            $currTable =~ s/^\[([^\]]*)\]/$1/g;
-            $log->addLine("Heading $currTable") if $debug;
-            @cols = @{figureColumnsFromTable($currTable)};
-            my @temp = ();
-            $insertQuery = "INSERT INTO $stagingTablePrefix" . "_$currTable (";
-            foreach (@cols)
-            {
-                $insertQuery .= "$_," if ($_ ne 'id');
-                push @temp, $_ if ($_ ne 'id');
-            }
-            @cols = @temp;
-            undef @temp;
-            $insertQuery = substr($insertQuery, 0, -1);
-            $insertQuery .= ")\nvalues\n";
-            $log->addLine(Dumper(\@cols)) if $debug;
-            $log->addLine(Dumper($#cols)) if $debug;
-        }
-        elsif ($currTable)
-        {
-            $log->addLine($line);
-
-            my @vals = split(/\t/, $line);
-            $log->addLine("Split and got\n" . Dumper(\@vals)) if $debug;
-            $log->addLine("Expecting $#cols and got $#vals") if $debug;
-            if ($#vals == $#cols) ## Expected number of columns
-            {
-                my @v = ();
-                my $colPos = 0;
-                foreach (@vals)
-                {
-                    my $val = getForignKey($currTable, $colPos, $_);
-                    push @v, $val;
-                    $colPos++;
-                }
-                push @datavals, [ @v ];
-            }
-        }
-    }
-    if (($#cols > -1) && ($#datavals > -1))
-    {
-        # execute the insert
-        @flatVals = ();
-        my $insertLog = $insertQuery;
-        foreach (@datavals)
-        {
-            my @row = @{$_};
-            $insertQuery .= "(";
-            $insertLog .= "(";
-            $insertQuery .= ' ? ,' foreach (@row);
-            $insertLog .= " '$_' ," foreach (@row);
-            $insertQuery = substr($insertQuery, 0, -1);
-            $insertLog = substr($insertLog, 0, -1);
-            $insertQuery .= "),\n";
-            $insertLog .= "),\n";
-            push @flatVals, @row;
-        }
-        $insertQuery = substr($insertQuery, 0, -2);
-        $insertLog = substr($insertLog, 0, -2);
-        $log->addLine($insertLog);
-        $dbHandler->updateWithParameters($insertQuery, \@flatVals);
-        undef @flatVals;
-    }
-
-}
-
-sub getForignKey
 {
     my $table = shift;
     my $colPos = shift;
@@ -682,7 +604,7 @@ sub figureColumnsFromTable
     foreach (@results)
     {
         my @row = @{$_};
-        push @ret, $row[0];
+        push @ret, @row[0];
     }
     return \@ret;
 }
@@ -706,6 +628,7 @@ sub runScrapers
     my %all = %{getScraperJobs()};
     while ((my $key, my $value) = each(%all))
     {
+
         # my $folder = "/mnt/evergreen/tmp/auto_rec_load/tmp/4"; # setupDownloadFolder($key);
         my $folder = setupDownloadFolder($key);
         initializeBrowser($folder);
@@ -716,7 +639,10 @@ sub runScrapers
             $screenShotDIR = undef if !$debug;
             $vendor = $details{"sourcename"} . '_' . $details{"clientname"};
             print "Scraping on: '$vendor'\n";
+            print "details{json}: [$details{json}] \n";
+
             my $json = decode_json($details{"json"});
+
             my $source;
             my $perl = '$source = new ' . $details{"perl_mod"} . '($log, $dbHandler, $stagingTablePrefix, $debug, ' .
                 '$key, "' . $vendor . '", $driver, $screenShotDIR, $folder, $json, ' . $details{"clientid"} . ', ' . $details{"jobid"} . ');';
@@ -767,6 +693,7 @@ sub runScrapers
         {
             printError("Scheduler Output folder doesn't exist");
         }
+
     }
     closeBrowser();
 }
@@ -779,9 +706,8 @@ sub runProcessMarcJobs
         my $thisJobID = $_;
         print "Working on: '$thisJobID'\n";
         my $tJob;
-        # $tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID);
         my $perl = '$tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID);';
-        # $tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID); # debug 
+        # $tJob = new job($log, $dbHandler, $stagingTablePrefix, $debug, $thisJobID); # debug This should be commented out 
         print $perl . "\n" if $debug;
         # Instantiate the Job
         {
@@ -874,7 +800,7 @@ sub runCheckILSLoaded
 
 # returns void 
 # EXITS ON COMPLETION
-sub runTest
+sub runTestMarcManipulations
 {
     print "Testing MARC manipulations: $testMARC\n";
     my $cwd = getcwd();
@@ -959,6 +885,7 @@ sub getProcessMarcReadyJobs
         $dbHandler->updateWithParameters($query, \@vals);
         undef @vals;
     }
+    
     $query = "
     SELECT
     job.id
@@ -1006,8 +933,9 @@ sub getILSConfirmationJobs
     foreach (@results)
     {
         my @row = @{$_};
-        push(@ret, $row[0]);
+        push(@ret, $row[0]); # <== Is that right? @ret is not initialized. Furthermore, couldn't we just return $dbHandler->query($query)? or would it be $dbHandler->query($query)->[0]? 
     }
+    $dbHandler->query($query)
     print Dumper(@ret) if $debug;
     return \@ret;
 }
@@ -1209,6 +1137,10 @@ sub getScraperJobs
         $hash{"sourcename"} = shift @row;
         $hash{"type"} = shift @row;
         $hash{"perl_mod"} = shift @row;
+
+        # Clean some of the json up
+        @row[0] =~ s/\n/ /g;
+        @row[0] =~ s/\s/ /g;
         $hash{"json"} = shift @row;
         $hash{"clientid"} = shift @row;
         $hash{"scrape_img_folder"} = shift @row;
@@ -1216,7 +1148,7 @@ sub getScraperJobs
         $hash{"json"} =~ s/\\([^\\])/\\\\$1/g; #escape backslashes
         $sources{$sid} = \%hash;
     }
-    print Dumper(%sources) if $debug;
+    # print Dumper(%sources) if $debug;
     return \%sources;
 }
 
@@ -1569,10 +1501,23 @@ sub testJob
         };
     }
 
-
     $tJob->testConf();
-    
+
     print "\n\n#################### testJob ####################\n";
+    exit;
+}
+
+sub runTest
+{
+    print "\n\n\n --------- testing --------- \n\n\n";
+
+    my $jobID = 20;
+    my $load_key = 'overdrive_archway_overdrive';
+    $log->addLogLine("****************** runTest() ******************");
+
+    my $overdriveCleanup = OverdriveCleanup->new($dbHandler, $log, $load_key, $jobID);
+    $overdriveCleanup->clean();
+
     exit;
 }
 

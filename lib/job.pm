@@ -44,12 +44,7 @@ sub _fillVars
 {
     my $self = shift;
 
-    my $query = "select 
-    id from
-    " . $self->{prefix} .
-        "_job
-    where
-    id = " . $self->{job};
+    my $query = "select id from " . $self->{prefix} . "_job where id = " . $self->{job};
 
     my @results = @{$self->{dbHandler}->query($query)};
 
@@ -75,13 +70,17 @@ sub _fillVars
         " . $self->{prefix} . "_cluster cluster on (cluster.id=client.cluster)
         WHERE
         import.job = " . $self->{job};
+        
         @results = @{$self->getDataFromDB($query)};
+        
         foreach (@results)
         {
             my @row = @{$_};
+
             # Clean some of the json up
             @row[0] =~ s/\n/ /g;
             @row[0] =~ s/\s/ /g;
+            @row[0] =~ s/\\([^\\])/\\\\$1/g; #escape backslashes
             $self->{log}->addLine(@row[0]);
             $self->{json} = decode_json(@row[0]);
             $self->{dbhost} = @row[1];
@@ -92,7 +91,7 @@ sub _fillVars
 
             $self->parseJSON($self->{json});
 
-            setupExternalPGConnection($self) if(!$self->{extPG} && $self->{checkAddsVsUpdates});
+            setupExternalPGConnection($self) if (!$self->{extPG} && $self->{crossReferenceILSRecord});
 
             last; # should only be one row returned
         }
@@ -106,7 +105,7 @@ sub runJob
     my $self = shift;
 
     my %imports = %{getImportIDs($self)}; # only "new" rows
-    @importIDs = (keys %imports);
+    my @importIDs = (keys %imports);
 
     my %recordTracker = ();
     $recordTracker{"convertedSuccess"} = 0;
@@ -125,7 +124,7 @@ sub runJob
     # Convert the marc, store results in the DB, weeding out errors
     my $before = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/logs/before.txt"); # todo: fix these hardcoded paths.
     my $after = new Loghandler("/mnt/evergreen/tmp/auto_rec_load/logs/after.txt");   # todo: fix these hardcoded paths
-    while ($#importIDs > -1)
+    while ($#importIDs > -1)                                                         # <=== TODO: This while loop will not break out if there is an issue with the process. Ask me how I know... There's an issue with the process 
     {
         $recordTracker{"total"}++;
         my $iID = shift @importIDs;
@@ -308,6 +307,25 @@ sub finishJob
     my $self = shift;
     my $finalString = shift;
     updateJobStatus($self, $finalString, 'finished');
+
+    my $perl = "$self->$self->{cleanup}();";
+
+    # run an eval that instantiates this module and calls the cleanup() method. 
+    {
+        local $@;
+        eval
+        {
+            eval $perl;
+            die if $source->getError();
+            1; # ok
+        } or do
+        {
+            # writeTrace($@ || "instantiation error: " . $details{"perl_mod"}, $details{"jobid"});
+            # queueNotice($details{"jobid"}, 'scraper', 'fail', $@ || "instantiation error");
+            next;
+        };
+    }
+
 }
 
 sub writeOutputMARC
@@ -486,7 +504,7 @@ sub addsOrUpdates
     {
         # Figure out if these bibs are already in the system for the importing library
         # This uses a clever bit of location code magic to narrow the query to only items for this library
-        if ($self->{locationCodeRegex} && $self->{checkAddsVsUpdates} && $self->{extPG})
+        if ($self->{locationCodeRegex} && $self->{crossReferenceILSRecord} && $self->{extPG})
         {
             my $query = "
             select vv.field_content,vv.record_id from
@@ -641,6 +659,9 @@ sub addsOrUpdates_append
 
 sub runCheckILSLoaded
 {
+
+    # This method is called from the command line. --action run_ils_check
+
     my $self = shift;
     my %imports = %{getImportIDsNotLoaded($self)}; # only "new" rows
     my @importIDs = (keys %imports);
@@ -703,6 +724,8 @@ sub runCheckILSLoaded
         }
     }
     removeFilesFromDisk($self);
+
+    $self->cleanup();
 }
 
 sub fileILSLoaded
@@ -1030,6 +1053,61 @@ sub getImportIDsNotLoaded
         $ret{$id} = \@row;
     }
     return \%ret;
+}
+
+sub cleanup
+{
+=pod 
+
+We put in our dbseed a json object
+If you want to "cleanup" a job then add
+
+"cleanup": "name-of-perl-module"
+or
+"cleanup": "overdriveCleanup"
+
+It should contain a method called clean();
+
+Note:
+I would like to flesh out this event model a little more. 
+
+init
+start -- currently called startJob
+
+my $overdriveCleanup = OverdriveCleanup->new(getDBConnection(), 0, 'test_key', '1');
+  
+'dbHandler'       => shift,
+'log'             => shift,
+'load_key'        => shift,
+'jobID'           => shift,
+'filePathAdds'    => shift,
+'filePathDeletes' => shift
+   
+We need the file path passed in from the json config object.
+What else do we need that's in our job
+   
+    
+=cut
+
+
+    my $perlMod;
+    my $perl = "$perlMod = $self->{cleanup}->new();"; # <== todo: finish this constructor!!! 
+
+    # instantiate our perlMod
+    {
+        local $@;
+        eval
+        {
+            eval $perl;
+            1;
+        } or do
+        {
+            print "failed...\n";
+        };
+    }
+
+    $perlMod->clean();
+
 }
 
 sub DESTROY

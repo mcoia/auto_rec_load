@@ -13,6 +13,7 @@ use MARC::File::XML (BinaryEncoding => 'utf8');
 use MARC::File::USMARC;
 use Unicode::Normalize;
 use File::Path qw(make_path remove_tree);
+use ARLUtils;
 
 use parent ARLObject;
 
@@ -36,7 +37,7 @@ sub _init
     $self->{downloadDIR} = shift;
     $self->{json} = shift;
     $self->{clientID} = shift;
-    $self->{thisJobID} = shift;
+    $self->{jobID} = shift;
     $self->{URL} = '';
     $self->{webuser} = '';
     $self->{webpass} = '';
@@ -49,8 +50,9 @@ sub _init
     $self->{postgresConnector} = undef;
     $self->{screenShotStep} = -1;
     $self->{screenShotDIR} = -1;
+    $self->{utils} = ARLUtils->new();
 
-    if($self->{sourceID} && $self->{dbHandler} && $self->{prefix} && $self->{driver} && $self->{log} && $self->{thisJobID})
+    if ($self->{sourceID} && $self->{dbHandler} && $self->{prefix} && $self->{driver} && $self->{log} && $self->{jobID})
     {
         $self = _fillVars($self);
         $self = $self->parseJSON($self->{json});
@@ -76,22 +78,22 @@ sub _fillVars
     cluster.postgres_password,
     source.scrape_img_folder
     from
-    ".$self->{prefix}.
+    " . $self->{prefix} .
         "_cluster cluster
     join
-    ".$self->{prefix}.
+    " . $self->{prefix} .
         "_client client on (client.cluster = cluster.id)
     join
-    ".$self->{prefix}.
+    " . $self->{prefix} .
         "_source source on (source.client = client.id)
     where
-    source.id = '".$self->{sourceID}."'";
+    source.id = '" . $self->{sourceID} . "'";
 
     my @results = @{$self->getDataFromDB($query)};
-    foreach(@results)
+    foreach (@results)
     {
         my @row = @{$_};
-        $self->{log}->addLine("Cluster vals: ".Dumper(\@row));
+        $self->{log}->addLine("Cluster vals: " . Dumper(\@row));
         $self->{clusterID} = @row[0];
         $self->{dbhost} = @row[1];
         $self->{dbdb} = @row[2];
@@ -101,7 +103,7 @@ sub _fillVars
         $self->{screenShotDIR} = @row[6];
     }
 
-    $self->{error} = 1 if($#results == -1);
+    $self->{error} = 1 if ($#results == -1);
 
     return $self;
 }
@@ -109,12 +111,13 @@ sub _fillVars
 sub waitForPageLoad
 {
     my ($self) = shift;
+    my $tries = shift | 0; # <== sometimes we call waitForPageLoad() inside a loop. This gives us the option to pass in our own counter.
+    my $stop = 0;
+    
     my $done = $self->{driver}->execute_script("return document.readyState === 'complete';");
     # print "Page done: $done\n";
-    my $stop = 0;
-    my $tries = 0;
 
-    while(!$done && !$stop)
+    while (!$done && !$stop)
     {
         $done = $self->{driver}->execute_script("return document.readyState === 'complete';");
         print "Waiting for Page load check: $tries\n";
@@ -130,7 +133,7 @@ sub waitForPageLoad
     my $stop = 0;
     $tries = 0;
     # An attempt to make sure the page is done loading any javascript alterations
-    while( ($newBody ne $body) && !$stop)
+    while (($newBody ne $body) && !$stop)
     {
         print "Waiting for Page load check: $tries\n";
         sleep 1;
@@ -191,15 +194,15 @@ sub handleLoginPage
     ";
 
     my $js;
-    if($formType eq 'id')
+    if ($formType eq 'id')
     {
         $js = "
-        document.getElementById('" .$userBoxID. "').value='".$self->{webuser}."';
-        document.getElementById('" .$passBoxID. "').value='".$self->{webpass}."';
-        thisElem = document.getElementById('" .$userBoxID. "');
+        document.getElementById('" . $userBoxID . "').value='" . $self->{webuser} . "';
+        document.getElementById('" . $passBoxID . "').value='" . $self->{webpass} . "';
+        thisElem = document.getElementById('" . $userBoxID . "');
         ";
     }
-    elsif($formType eq 'tagname')
+    elsif ($formType eq 'tagname')
     {
         $js = "
         var doms = document.getElementsByTagName('input');
@@ -208,15 +211,15 @@ sub handleLoginPage
         for(var i=0;i<doms.length;i++)
         {
             var thisaction = doms[i].getAttribute('name');
-            if(thisaction.match(/" .$userBoxID. "/g))
+            if(thisaction.match(/" . $userBoxID . "/g))
             {
-                doms[i].value = '".$self->{webuser}."';
+                doms[i].value = '" . $self->{webuser} . "';
                 thisElem = doms[i];
                 boxfills.user = 1;
             }
-            if(thisaction.match(/" .$passBoxID. "/g))
+            if(thisaction.match(/" . $passBoxID . "/g))
             {
-                doms[i].value = '".$self->{webpass}."';
+                doms[i].value = '" . $self->{webpass} . "';
                 thisElem = doms[i];
                 boxfills.pass = 1;
             }
@@ -227,7 +230,7 @@ sub handleLoginPage
         }
         ";
     }
-    $submitFunction  =~ s/!!codehere!!/$js/g;
+    $submitFunction =~ s/!!codehere!!/$js/g;
     $self->{log}->addLine("Executing: $submitFunction");
     my $worked = $self->{driver}->execute_script($submitFunction);
     waitForPageLoad($self);
@@ -247,8 +250,7 @@ sub handleAnchorClick
     my $propVal = $hrefMatch ? 'getAttribute("href")' : 'textContent';
 
     $anchorString = escapeStringForJSRegEX($self, $anchorString);
-    $self->addTrace( "handleAnchorClick", $anchorString);
-
+    $self->addTrace("handleAnchorClick", $anchorString);
 
     my $js = "
         var doms = document.getElementsByTagName('a');
@@ -268,14 +270,14 @@ sub handleAnchorClick
     my $worked = $self->{driver}->execute_script($js);
     waitForPageLoad($self);
     takeScreenShot($self, "handleAnchorClick_$anchorString");
-    if($correctPageString)
+    if ($correctPageString)
     {
         $worked = checkIfCorrectPage($self, $correctPageString);
-        if(!$worked)
+        if (!$worked)
         {
             my $error = $self->flattenArray($correctPageString, 'string');
-            $self->setError( "Clicked anchor but didn't find string(s): $error");
-            takeScreenShot($self, "handleAnchorClick_$anchorString"."_string_not_found");
+            $self->setError("Clicked anchor but didn't find string(s): $error");
+            takeScreenShot($self, "handleAnchorClick_$anchorString" . "_string_not_found");
         }
     }
     return $worked;
@@ -290,12 +292,11 @@ sub handleParentAnchorClick
     my $correctPageString = shift;
     my $parentTagType = shift || 'a';
 
-
-    $self->addTrace( "handleParentAnchorClick", $childTagStringMatch);
+    $self->addTrace("handleParentAnchorClick", $childTagStringMatch);
     $childTagStringMatch = escapeStringForJSRegEX($self, $childTagStringMatch);
 
     my $js = "
-        var doms = document.getElementsByTagName('".$childTagType."');
+        var doms = document.getElementsByTagName('" . $childTagType . "');
         var matched = 0;
         for(var i=0;i<doms.length;i++)
         {
@@ -335,21 +336,21 @@ sub handleParentAnchorClick
     my $worked = $self->{driver}->execute_script($js);
     waitForPageLoad($self);
     takeScreenShot($self, "handleAnchorClick_$childTagStringMatch");
-    if($correctPageString)
+    if ($correctPageString)
     {
         my $tries = 0;
         $worked = checkIfCorrectPage($self, $correctPageString);
-        while(!$worked && $tries < 20) # Some websites are completely JS, and the page load isn't reliable, Let's do 20 seconds of page parses
+        while (!$worked && $tries < 20) # Some websites are completely JS, and the page load isn't reliable, Let's do 20 seconds of page parses
         {
             sleep 1;
             $worked = checkIfCorrectPage($self, $correctPageString);
             $tries++;
         }
-        if(!$worked)
+        if (!$worked)
         {
             my $error = $self->flattenArray($correctPageString, 'string');
-            $self->setError( "Clicked anchor but didn't find string(s): $error");
-            takeScreenShot($self, "handleAnchorClick_$childTagStringMatch"."_string_not_found");
+            $self->setError("Clicked anchor but didn't find string(s): $error");
+            takeScreenShot($self, "handleAnchorClick_$childTagStringMatch" . "_string_not_found");
         }
         else
         {
@@ -362,22 +363,22 @@ sub handleParentAnchorClick
 sub handleDOMTriggerOrSetValue
 {
     my $self = shift;
-    my $type = shift; # 'setval' or 'action'
-    my $DOMID = shift; # this can be null if you supply $domType and $elementProperty instead
-    my $data = shift; # data for input or function() ie click()
+    my $type = shift;    # 'setval' or 'action'
+    my $DOMID = shift;   # this can be null if you supply $domType and $elementProperty instead
+    my $data = shift;    # data for input or function() ie click()
     my $domType = shift; # "input" or "textbox", etc.
     my $elementAttributesRef = shift;
     my $elementTextContentMatch = shift;
 
     my $worked = undef;
     $data =~ s/'/\\'/g;
-    $data = "value  = '$data'" if($type eq 'setval');
-    %elementAttributes = %{$elementAttributesRef} if($elementAttributesRef);
-    $self->addTrace( "handleDOMTriggerFire", $DOMID);
+    $data = "value  = '$data'" if ($type eq 'setval');
+    %elementAttributes = %{$elementAttributesRef} if ($elementAttributesRef);
+    $self->addTrace("handleDOMTriggerFire", $DOMID);
     print "heading to search routine\n";
-    $DOMID = findElementByAttributes($self, $domType, 'id', $elementAttributesRef, $elementTextContentMatch) if($elementAttributesRef && $domType);
+    $DOMID = findElementByAttributes($self, $domType, 'id', $elementAttributesRef, $elementTextContentMatch) if ($elementAttributesRef && $domType);
     print "Received: $DOMID\n";
-    if(''.$DOMID eq '0' && ($elementAttributesRef && $domType))
+    if ('' . $DOMID eq '0' && ($elementAttributesRef && $domType))
     {
         print "Dropping into action\n";
         # in the case where the target element doesn't have an ID: we just need the search code to perform the action
@@ -386,9 +387,9 @@ sub handleDOMTriggerOrSetValue
     else
     {
         my $js = "
-            if(document.getElementById('".$DOMID."'))
+            if(document.getElementById('" . $DOMID . "'))
             {
-                document.getElementById('".$DOMID."').$data;
+                document.getElementById('" . $DOMID . "').$data;
                 return 1;
             }
             return 0;
@@ -412,19 +413,19 @@ sub findElementByAttributes
     my $elementAction = shift;
 
     my %elementAttributes = undef;
-    %elementAttributes = %{$elementAttributesRef} if($elementAttributesRef);
+    %elementAttributes = %{$elementAttributesRef} if ($elementAttributesRef);
     $elementTextContentMatch = escapeStringForJSRegEX($self, $elementTextContentMatch) if ($elementTextContentMatch);
-    if(%elementAttributes && $domType && $returnProp)
+    if (%elementAttributes && $domType && $returnProp)
     {
         my $js = "
-        var doms = document.getElementsByTagName('".$domType."');
+        var doms = document.getElementsByTagName('" . $domType . "');
         var attribs = {";
-        while ( (my $key, my $value) = each(%elementAttributes) )
+        while ((my $key, my $value) = each(%elementAttributes))
         {
             $js .= "'$key' : '$value',\n";
         }
-        $js = substr($js,0,-2);
-        $js.="};
+        $js = substr($js, 0, -2);
+        $js .= "};
         
         for(var i=0;i<doms.length;i++)
         {
@@ -436,16 +437,16 @@ sub findElementByAttributes
                     var rgxp = new RegExp(attribs[key],'i');
                     if(doms[i].getAttribute(key).match(rgxp))
                     {";
-        if($elementTextContentMatch)
+        if ($elementTextContentMatch)
         {
-            $js.="
+            $js .= "
                         if(!doms[i].textContent.match(/$elementTextContentMatch/i))
                         {
                             matched = 0;
                             break;
                         }";
         }
-        $js.="
+        $js .= "
                         matched = 1;
                     }
                     else
@@ -458,13 +459,13 @@ sub findElementByAttributes
             if(matched)
             {
                 ";
-        if($elementAction)
+        if ($elementAction)
         {
             $js .= "doms[i].$elementAction;
                     return 1;
                     ";
         }
-        $js.="
+        $js .= "
                 if(doms[i].getAttribute('$returnProp'))
                 {
                     return doms[i].getAttribute('$returnProp');
@@ -528,7 +529,7 @@ sub doWebActionAfewTimes
     $actionCode = '$result = ' . $actionCode . ";";
     my $loops = 0;
     $self->{log}->addLine("Executing: $actionCode");
-    while( ($retryCount > $loops) && !$result )
+    while (($retryCount > $loops) && !$result)
     {
         eval $actionCode;
         $loops++;
@@ -545,9 +546,9 @@ sub checkIfCorrectPage
     my $self = shift;
     my $string = shift;
     my @strings = @{$self->flattenArray($string, 'array')};
-    $self->addTrace( "checkIfCorrectPage", $string);
+    $self->addTrace("checkIfCorrectPage", $string);
     my $ret = 1;
-    foreach(@strings)
+    foreach (@strings)
     {
         last if !$ret;
         $ret = checkPageForString($self, $_);
@@ -586,16 +587,16 @@ sub stringContains
     my $string2 = shift;
     my $caseSensitive = shift || 0;
     my $ret = 0;
-    if($caseSensitive)
+    if ($caseSensitive)
     {
-        if($string =~ m/$string2/g)
+        if ($string =~ m/$string2/g)
         {
             $ret = 1;
         }
     }
     else
     {
-        if($string =~ m/$string2/gi)
+        if ($string =~ m/$string2/gi)
         {
             $ret = 1;
         }
@@ -613,16 +614,16 @@ sub stringMatch
     $string =~ $self->trim($string);
     $string2 =~ $self->trim($string2);
     my $ret = 0;
-    if($caseSensitive)
+    if ($caseSensitive)
     {
-        if($string eq $string2)
+        if ($string eq $string2)
         {
             $ret = 1;
         }
     }
     else
     {
-        if(lc $string eq lc $string2)
+        if (lc $string eq lc $string2)
         {
             $ret = 1;
         }
@@ -636,35 +637,35 @@ sub getCorrectTableHTML
     my $searchString = shift;
     my $body = getHTMLBody($self);
     my $ret;
-    pQuery("table",$body)->each(sub {
+    pQuery("table", $body)->each(sub {
         shift;
-        if(!$ret)
+        if (!$ret)
         {
             my $thisTable = pQuery($_)->toHtml();
-            pQuery("thead > tr > th", $_)->each( sub {
+            pQuery("thead > tr > th", $_)->each(sub {
                 shift;
-                if(!$ret) # save some cycles
+                if (!$ret) # save some cycles
                 {
-                    $ret = $thisTable if(stringMatch($self, pQuery($_)->text(), $searchString));
+                    $ret = $thisTable if (stringMatch($self, pQuery($_)->text(), $searchString));
                 }
             });
-            if(!$ret) ## maybe the table doesn't have "thead", let's travers tr > th instead
+            if (!$ret) ## maybe the table doesn't have "thead", let's travers tr > th instead
             {
-                pQuery("tr > th", $_)->each( sub {
+                pQuery("tr > th", $_)->each(sub {
                     shift;
-                    if(!$ret) # save some cycles
+                    if (!$ret) # save some cycles
                     {
-                        $ret = $thisTable if(stringMatch($self, pQuery($_)->text(), $searchString));
+                        $ret = $thisTable if (stringMatch($self, pQuery($_)->text(), $searchString));
                     }
                 });
             }
-            if(!$ret) ## maybe the table doesn't have "th", let's travers tr > td instead
+            if (!$ret) ## maybe the table doesn't have "th", let's travers tr > td instead
             {
-                pQuery("tr > td", $_)->each( sub {
+                pQuery("tr > td", $_)->each(sub {
                     shift;
-                    if(!$ret) # save some cycles
+                    if (!$ret) # save some cycles
                     {
-                        $ret = $thisTable if(stringMatch($self, pQuery($_)->text(), $searchString));
+                        $ret = $thisTable if (stringMatch($self, pQuery($_)->text(), $searchString));
                     }
                 });
             }
@@ -689,12 +690,12 @@ sub seeIfNewFile
 {
     my $self = shift;
     my @files = @{readSaveFolder($self)};
-    foreach(@files)
+    foreach (@files)
     {
-        if(!$filesOnDisk{$_})
+        if (!$filesOnDisk{$_})
         {
             # print "Detected new file: $_\n";
-            checkFileReady($self, $self->{downloadDIR} ."/".$_);
+            checkFileReady($self, $self->{downloadDIR} . "/" . $_);
             return $self->{downloadDIR} . "/" . $_;
         }
     }
@@ -710,23 +711,23 @@ sub readSaveFolder
     my @files = ();
     my $pwd = $self->{downloadDIR};
     # print "Opening '".$self->{downloadDIR}."'\n";
-    opendir(DIR,$pwd) or die "Cannot open $pwd\n";
+    opendir(DIR, $pwd) or die "Cannot open $pwd\n";
     my @thisdir = readdir(DIR);
     closedir(DIR);
     foreach my $file (@thisdir)
     {
         # print "Checking: $file\n";
-        if( ($file ne ".") && ($file ne "..") && !($file =~ /\.part/g))  # ignore firefox "part files"
+        if (($file ne ".") && ($file ne "..") && !($file =~ /\.part/g)) # ignore firefox "part files"
         {
             # print "Checking: $file\n";
             if (-f "$pwd/$file")
             {
                 @stat = stat "$pwd/$file";
                 my $size = $stat[7];
-                if($size ne '0')
+                if ($size ne '0')
                 {
                     push(@files, "$file");
-                    if($init)
+                    if ($init)
                     {
                         $filesOnDisk{$file} = 1;
                     }
@@ -744,9 +745,9 @@ sub checkFileReady
     my $file = shift;
     my @stat = stat $file;
     my $baseline = $stat[7];
-    $baseline+=0;
+    $baseline += 0;
     my $now = -1;
-    while($now != $baseline)
+    while ($now != $baseline)
     {
         @stat = stat $file;
         $now = $stat[7];
@@ -767,7 +768,7 @@ sub extractCompressedFile
 
     $self->{log}->addLine("extractCompressFile file: [$file]") if $self->{debug};
     # lowercase all of the extensions
-    for my $b(0..$#extensionExtracts)
+    for my $b (0 .. $#extensionExtracts)
     {
         @extensionExtracts[$b] = lc @extensionExtracts[$b];
     }
@@ -776,47 +777,47 @@ sub extractCompressedFile
     my $extension = getFileExt($self, $file);
     print "Read Extension: $extension\n";
     my $extractFolder = $self->{downloadDIR} . '/extract';
-    ensureFolderExists($self, $extractFolder);
-    cleanFolder($self, $extractFolder);
-    if(lc $extension =~ m/zip/g)
+    $self->ensureFolderExists($extractFolder);
+    $self->cleanFolder($extractFolder);
+    if (lc $extension =~ m/zip/g)
     {
         # Read a Zip file
         my $zip = Archive::Zip->new();
         my $tries = 0;
         my $giveUpAfter = 10; # I think 10 seconds is enough waiting
-        while( !($zip->read( $file ) == AZ_OK) && ($tries < $giveUpAfter) )
+        while (!($zip->read($file) == AZ_OK) && ($tries < $giveUpAfter))
         {
             $tries++;
             # sometimes the zip file is too fresh, and we need to let the file system to do whatever it does.
             sleep 1;
         }
-        unless ( $zip->read( $file ) == AZ_OK )
+        unless ($zip->read($file) == AZ_OK)
         {
-            $self->setError( "Could not open $file");
-            $self->addTrace( "Could not open $file");
+            $self->setError("Could not open $file");
+            $self->addTrace("Could not open $file");
             return 'error reading zip';
         }
         my @list = $zip->memberNames();
         my %fileDedupe = ();
-        foreach(@list)
+        foreach (@list)
         {
             my $thisMember = $_;
             my $extract = 0;
-            if(@extensionExtracts)
+            if (@extensionExtracts)
             {
-                foreach(@extensionExtracts)
+                foreach (@extensionExtracts)
                 {
                     print "checking extention $_ \n";
                     @splitdots = split(/\./, $thisMember);
                     my $thisExt = getFileExt($self, $thisMember);
-                    $extract = 1 if(lc $thisExt =~ m/$_/g);
+                    $extract = 1 if (lc $thisExt =~ m/$_/g);
                 }
             }
             else
             {
                 $extract = 1;
             }
-            if($extract && !$fileDedupe{$thisMember})
+            if ($extract && !$fileDedupe{$thisMember})
             {
                 my $outputMemberFilename = $thisMember;
 
@@ -831,13 +832,13 @@ sub extractCompressedFile
                 $outputMemberFilename =~ s/\\/\//g;
                 $zip->extractMember($thisMember, $extractFolder . "/$outputMemberFilename");
                 $fileDedupe{$thisMember} = 1;
-                push (@ret, $extractFolder . "/$outputMemberFilename");
+                push(@ret, $extractFolder . "/$outputMemberFilename");
             }
         }
     }
     else
     {
-        push (@ret, $file);
+        push(@ret, $file);
     }
     return \@ret;
 }
@@ -849,17 +850,17 @@ sub readMARCFile
     my $fExtension = getFileExt($self, $marcFile);
     my $file;
     $self->{log}->addLine("Reading $marcFile");
-    $file = MARC::File::USMARC->in($marcFile) if lc $fExtension !=~ m/xml/;
+    $file = MARC::File::USMARC->in($marcFile) if lc $fExtension != ~m/xml/;
     $file = MARC::File::XML->in($marcFile) if lc $fExtension =~ m/xml/;
     my @ret;
     local $@;
     eval
     {
-        while ( my $marc = $file->next() )
+        while (my $marc = $file->next())
         {
-            push (@ret, $marc);
+            push(@ret, $marc);
         }
-        1;  # ok
+        1; # ok
     } or do
     {
         $file->close();
@@ -895,7 +896,7 @@ sub readMARCFileRaw
             $self->addTrace("readMARCFileRaw", "$marcFile could not be fully read. Record $count had warnings");
             $self->setError("$marcFile could not be fully read. Record $count had warnings");
         }
-        push (@ret, $marc);
+        push(@ret, $marc);
     }
 
     $file->close();
@@ -909,7 +910,7 @@ sub getFileExt
 {
     my $self = shift;
     my $filename = shift;
-    my @fsp = split(/\./,$filename);
+    my @fsp = split(/\./, $filename);
     my $ret = pop @fsp;
     return $ret;
 }
@@ -931,14 +932,14 @@ sub getsubfield
     my $subtag = shift;
     my $ret;
     #print "Extracting $tag $subtag\n";
-    if($marc->field($tag))
+    if ($marc->field($tag))
     {
-        if($tag+0 < 10)
+        if ($tag + 0 < 10)
         {
             #print "It was less than 10 so getting data\n";
             $ret = $marc->field($tag)->data();
         }
-        elsif($marc->field($tag)->subfield($subtag))
+        elsif ($marc->field($tag)->subfield($subtag))
         {
             $ret = $marc->field($tag)->subfield($subtag);
         }
@@ -955,10 +956,10 @@ sub createFileEntry
     my $key = shift;
     $key = $self->escapeData($key);
     my $query = "INSERT INTO 
-    $self->{prefix}"."_file_track (fkey, filename, source, client)
+    $self->{prefix}" . "_file_track (fkey, filename, source, client)
     VALUES(?, ?, ?, ?)";
     my @vals = ($key, $file, $self->{sourceID}, $self->{clientID});
-    $self->doUpdateQuery( $query, undef, \@vals);
+    $self->doUpdateQuery($query, undef, \@vals);
     return getFileID($self, $key, $file);
 }
 
@@ -969,23 +970,23 @@ sub getFileID
     my $file = shift;
 
     my $ret = 0;
-    my $query = "select max(id) from $self->{prefix}"."_file_track file
+    my $query = "select max(id) from $self->{prefix}" . "_file_track file
     where
-    source = " .$self->{sourceID}. "
-    and client = " .$self->{clientID};
-    if($file)
+    source = " . $self->{sourceID} . "
+    and client = " . $self->{clientID};
+    if ($file)
     {
         $file = $self->escapeData($file);
         $query .= " and filename = '$file'";
     }
-    if($key)
+    if ($key)
     {
         $key = $self->escapeData($key);
         $query .= " and fkey = '$key'";
     }
     $self->{log}->addLine($query);
     my @results = @{$self->getDataFromDB($query)};
-    foreach(@results)
+    foreach (@results)
     {
         my @row = @{$_};
         $ret = @row[0];
@@ -1002,38 +1003,38 @@ sub createImportStatusFromRecordArray
     my $tag = makeTag($self, $fileID);
     my @records = @{$rec};
     my $queryStart = "INSERT INTO 
-    $self->{prefix}"."_import_status (file, record_raw, tag, z001, job)\nVALUES\n";
+    $self->{prefix}" . "_import_status (file, record_raw, tag, z001, job)\nVALUES\n";
     my @vals = ();
     my $query = $queryStart;
     my $loops = 0;
-    foreach(@records)
+    foreach (@records)
     {
         $loops++;
         my $record = $self->convertMARCtoXML($_);
         my $z01 = getsubfield($self, $_, '001');
-        push (@vals, $fileID);
-        push (@vals, $record);
-        push (@vals, $tag);
-        push (@vals, $z01);
-        push (@vals, $jobID);
+        push(@vals, $fileID);
+        push(@vals, $record);
+        push(@vals, $tag);
+        push(@vals, $z01);
+        push(@vals, $jobID);
         $query .= "(?, ?, ?, ?, ?),";
         # chunking
-        if($loops % 100 == 0)
+        if ($loops % 100 == 0)
         {
-            $query = substr($query,0,-1); # remove the last comma
+            $query = substr($query, 0, -1); # remove the last comma
             createImportStatus($self, $query, \@vals);
             @vals = ();
             $query = $queryStart;
-            $loops=0;
+            $loops = 0;
         }
     }
-    if($loops > 0) # in case there was exactly % 100 records, we check that there is more than 0
+    if ($loops > 0) # in case there was exactly % 100 records, we check that there is more than 0
     {
-        $query = substr($query,0,-1); # remove the last comma
+        $query = substr($query, 0, -1); # remove the last comma
         createImportStatus($self, $query, \@vals);
         @vals = ();
         $query = $queryStart;
-        $loops=0;
+        $loops = 0;
     }
     undef @vals;
     undef $loops;
@@ -1046,29 +1047,29 @@ sub getColumnFromCSV
     my $columnNameOrPosition = shift || '0'; # default to first column
     my @ret = ();
 
-    my $csv = Text::CSV->new ({ binary => 1, auto_diag => 1 });
+    my $csv = Text::CSV->new({ binary => 1, auto_diag => 1 });
     open my $fh, "<:encoding(utf8)", $file or die "$file: $!";
     my $rownum = 0;
     my $colPOS = -1;
-    if($columnNameOrPosition =~ m/^\d+$/) # The passed value is numeric, assuming it's a column position number, 0 based
+    if ($columnNameOrPosition =~ m/^\d+$/) # The passed value is numeric, assuming it's a column position number, 0 based
     {
         $colPOS = $columnNameOrPosition;
         print "set colpos = $colPOS\n";
     }
 
-    while (my $row = $csv->getline ($fh))
+    while (my $row = $csv->getline($fh))
     {
-        if($colPOS == -1) # we've not figured out the column yet
+        if ($colPOS == -1) # we've not figured out the column yet
         {
             print "ref:\n";
             print ref $row;
             print "\n";
             my $col = 0;
-            foreach(@{$row})
+            foreach (@{$row})
             {
                 $_ =~ s/\x{feff}//g;
                 $self->{log}->addLine("comparing: '$_' to '$columnNameOrPosition'");
-                if( (lc($_)) eq (lc($columnNameOrPosition)) )
+                if ((lc($_)) eq (lc($columnNameOrPosition)))
                 {
                     $colPOS = $col;
                     $self->{log}->addLine("matched");
@@ -1092,7 +1093,7 @@ sub createImportStatus
     my $query = shift;
     my $v = shift;
     my @vals = @{$v};
-    my $worked = $self->doUpdateQuery( $query, undef, \@vals );
+    my $worked = $self->doUpdateQuery($query, undef, \@vals);
     return $worked;
 }
 
@@ -1102,17 +1103,17 @@ sub makeTag
     my $fileID = shift;
     my $ret = 0;
     my $query = "SELECT concat(cast(date(grab_time) as char),'_',c.name,'_',s.name) as tag from 
-    $self->{prefix}"."_file_track f,
-    $self->{prefix}"."_client c,
-    $self->{prefix}"."_source s
+    $self->{prefix}" . "_file_track f,
+    $self->{prefix}" . "_client c,
+    $self->{prefix}" . "_source s
     where
     c.id=f.client and
     s.id=f.source and
     f.id= $fileID";
-    $self->addTrace("makeTag","Making Tag");
+    $self->addTrace("makeTag", "Making Tag");
     $self->{log}->addLine($query);
     my @results = @{$self->getDataFromDB($query)};
-    foreach(@results)
+    foreach (@results)
     {
         my @row = @{$_};
         $ret = @row[0];
@@ -1124,10 +1125,10 @@ sub createJob
 {
     my $self = shift;
     my $query = "INSERT INTO 
-    $self->{prefix}"."_job (current_action, type, source)
+    $self->{prefix}" . "_job (current_action, type, source)
     VALUES(null, ?, ?)";
     my @vals = ('processmarc', $self->{sourceID});
-    $self->doUpdateQuery( $query, undef, \@vals);
+    $self->doUpdateQuery($query, undef, \@vals);
     return getJobID($self);
 }
 
@@ -1136,13 +1137,13 @@ sub getJobID
     my $self = shift;
 
     my $ret = 0;
-    my $query = "select max(id) from $self->{prefix}"."_job job
+    my $query = "select max(id) from $self->{prefix}" . "_job job
     where
     status = 'new' and
     type = 'processmarc'";
     $self->{log}->addLine($query);
     my @results = @{$self->getDataFromDB($query)};
-    foreach(@results)
+    foreach (@results)
     {
         my @row = @{$_};
         $ret = @row[0];
@@ -1154,18 +1155,18 @@ sub readyJob
 {
     my $self = shift;
     my $jobID = shift || $self->{job};
-    my $query = "UPDATE $self->{prefix}"."_job SET status = 'ready' where id = $jobID";
+    my $query = "UPDATE $self->{prefix}" . "_job SET status = 'ready' where id = $jobID";
     my @vars = ();
-    $self->doUpdateQuery( $query, undef, \@vars );
+    $self->doUpdateQuery($query, undef, \@vars);
     undef @vars;
 }
 
 sub startThisJob
 {
     my $self = shift;
-    my $query = "UPDATE $self->{prefix}"."_job SET status = 'processing', start_time = NOW() WHERE id = $self->{thisJobID}";
+    my $query = "UPDATE $self->{prefix}" . "_job SET status = 'processing', start_time = NOW() WHERE id = $self->{jobID}";
     my @vars = ();
-    $self->doUpdateQuery( $query, undef, \@vars );
+    $self->doUpdateQuery($query, undef, \@vars);
     undef @vars;
 }
 
@@ -1176,14 +1177,14 @@ sub updateThisJobStatus
     my $status = shift || 'processing';
     my $query =
         "UPDATE
-    ".$self->{prefix}.
+    " . $self->{prefix} .
             "_job
     set
     status = ?,
     current_action = ?
     where
     id = ?";
-    my @vals = ($status, $action, $self->{thisJobID});
+    my @vals = ($status, $action, $self->{jobID});
     $self->doUpdateQuery($query, undef, \@vals);
 }
 
@@ -1198,9 +1199,9 @@ sub updateSourceScrapeDate
 {
     my $self = shift;
     my $sourceID = shift || $self->{sourceID};
-    my $query = "UPDATE $self->{prefix}"."_source SET last_scraped = now() where id = $sourceID";
+    my $query = "UPDATE $self->{prefix}" . "_source SET last_scraped = now() where id = $sourceID";
     my @vars = ();
-    $self->doUpdateQuery( $query, undef, \@vars );
+    $self->doUpdateQuery($query, undef, \@vars);
     undef @vars;
 }
 
@@ -1209,32 +1210,30 @@ sub decideToProcessFile
     my $self = shift;
     my $sourceFileName = shift;
     $sourceFileName = lc $sourceFileName;
-    my $ret = "";
-    foreach($self->{deletes})
+    foreach ($self->{deletes})
     {
         my $scrap = lc $_;
-        if($sourceFileName =~ m/$scrap/g)
+        if ($sourceFileName =~ m/$scrap/g)
         {
-            $ret = 1;
+            return 1;
         }
     }
-    if($self->{adds})
+    if ($self->{adds})
     {
-        foreach($self->{adds})
+        foreach ($self->{adds})
         {
             my $scrap = lc $_;
-            if($sourceFileName =~ m/$scrap/g)
+            if ($sourceFileName =~ m/$scrap/g)
             {
-                $ret = 1;
-                last;
+                return 1;
             }
         }
     }
     else
     {
-        $ret = 1;
+        return 1;
     }
-    return $ret;
+    return 0;
 }
 
 sub ensureFolderExists
@@ -1243,13 +1242,13 @@ sub ensureFolderExists
     my $path = shift;
     my $mode = shift || 0711;
     print "mode: $mode\n";
-    if ( !(-d $path) )
+    if (!(-d $path))
     {
-        print "creating: '" . $path. "'\n";
+        print "creating: '" . $path . "'\n";
         make_path($path, {
             verbose => 1,
-            chmod => $mode,
-            mode => $mode,
+            chmod   => $mode,
+            mode    => $mode,
         });
     }
 }
@@ -1258,11 +1257,11 @@ sub cleanFolder
 {
     my $self = shift;
     my $folder = shift;
-    if( (-d $folder) && ($folder ne '/') )
+    if ((-d $folder) && ($folder ne '/'))
     {
         my @files = ();
-        @files = @{$self->dirtrav(\@files,$folder)};
-        foreach(@files)
+        @files = @{$self->dirtrav(\@files, $folder)};
+        foreach (@files)
         {
             print "Deleting: $_\n";
             # unlink $_ if(-f $_);
@@ -1281,8 +1280,8 @@ sub getHTMLBody
 sub cleanScreenShotFolder
 {
     my $self = shift;
-    ensureFolderExists($self, $self->{screenShotDIR}, 0777);
-    cleanFolder($self, $self->{screenShotDIR});
+    $self->ensureFolderExists($self->{screenShotDIR}, 0777);
+    $self->cleanFolder($self->{screenShotDIR});
 }
 
 sub takeScreenShot
@@ -1299,13 +1298,13 @@ sub takeScreenShot
     $action =~ s/[\x80-\x{FFFF}]//g;
 
     # keep it reasonable please
-    $action = substr($action,0,30);
+    $action = substr($action, 0, 30);
 
     $self->{screenShotStep}++;
     # $self->{log}->addLine("screenshot self: ".Dumper($self));
     # print "ScreenShot: ".$self->{debugScreenshotDIR}."/".$self->{name}."_".$self->{screenShotStep}."_".$action.".png\n";
-    $self->{driver}->capture_screenshot($self->{debugScreenshotDIR}."/".$self->{name}."_".$self->{screenShotStep}."_".$action.".png", {'full' => 1}) if($self->{debugScreenshotDIR});
-    $self->{driver}->capture_screenshot($self->{screenShotDIR}."/".$self->{name}."_".$self->{screenShotStep}."_".$action.".png", {'full' => 1});
+    $self->{driver}->capture_screenshot($self->{debugScreenshotDIR} . "/" . $self->{name} . "_" . $self->{screenShotStep} . "_" . $action . ".png", { 'full' => 1 }) if ($self->{debugScreenshotDIR});
+    $self->{driver}->capture_screenshot($self->{screenShotDIR} . "/" . $self->{name} . "_" . $self->{screenShotStep} . "_" . $action . ".png", { 'full' => 1 });
 }
 
 sub DESTROY
