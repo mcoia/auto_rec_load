@@ -560,6 +560,115 @@ sub createDatabase
 
 sub seedDB
 {
+    my $seedFile = shift;
+    my $readFile = new Loghandler($seedFile);
+    $log->addLine("Reading seeDB File $seedFile");
+    my @lines = @{$readFile->readFile()};
+
+    my $currTable = '';
+    my @cols = ();
+    my $insertQuery = "";
+    my @datavals = ();
+    foreach (@lines)
+    {
+        my $line = $_;
+        $line = trim($line);
+        if ($line =~ m/^\[/)
+        {
+            if (($#cols > -1) && ($#datavals > -1))
+            {
+                # execute the insert
+                @flatVals = ();
+                my $insertLog = $insertQuery;
+                foreach (@datavals)
+                {
+                    my @row = @{$_};
+                    $insertQuery .= "(";
+                    $insertLog .= "(";
+                    $insertQuery .= ' ? ,' foreach (@row);
+                    $insertLog .= " '$_' ," foreach (@row);
+                    $insertQuery = substr($insertQuery, 0, -1);
+                    $insertLog = substr($insertLog, 0, -1);
+                    $insertQuery .= "),\n";
+                    $insertLog .= "),\n";
+                    push @flatVals, @row;
+                }
+                $insertQuery = substr($insertQuery, 0, -2);
+                $insertLog = substr($insertLog, 0, -2);
+                $log->addLine($insertLog);
+                $dbHandler->updateWithParameters($insertQuery, \@flatVals);
+                undef @flatVals;
+                @datavals = ();
+            }
+            $log->addLine("seedDB: Detected client delcaration") if $debug;
+            $currTable = $line;
+            $currTable =~ s/^\[([^\]]*)\]/$1/g;
+            $log->addLine("Heading $currTable") if $debug;
+            @cols = @{figureColumnsFromTable($currTable)};
+            my @temp = ();
+            $insertQuery = "INSERT INTO $stagingTablePrefix" . "_$currTable (";
+            foreach (@cols)
+            {
+                $insertQuery .= "$_," if ($_ ne 'id');
+                push @temp, $_ if ($_ ne 'id');
+            }
+            @cols = @temp;
+            undef @temp;
+            $insertQuery = substr($insertQuery, 0, -1);
+            $insertQuery .= ")\nvalues\n";
+            $log->addLine(Dumper(\@cols)) if $debug;
+            $log->addLine(Dumper($#cols)) if $debug;
+        }
+        elsif ($currTable)
+        {
+            $log->addLine($line);
+
+            my @vals = split(/\t/, $line);
+            $log->addLine("Split and got\n" . Dumper(\@vals)) if $debug;
+            $log->addLine("Expecting $#cols and got $#vals") if $debug;
+            if ($#vals == $#cols) ## Expected number of columns
+            {
+                my @v = ();
+                my $colPos = 0;
+                foreach (@vals)
+                {
+                    my $val = getForignKey($currTable, $colPos, $_);
+                    push @v, $val;
+                    $colPos++;
+                }
+                push @datavals, [ @v ];
+            }
+        }
+    }
+    if (($#cols > -1) && ($#datavals > -1))
+    {
+        # execute the insert
+        @flatVals = ();
+        my $insertLog = $insertQuery;
+        foreach (@datavals)
+        {
+            my @row = @{$_};
+            $insertQuery .= "(";
+            $insertLog .= "(";
+            $insertQuery .= ' ? ,' foreach (@row);
+            $insertLog .= " '$_' ," foreach (@row);
+            $insertQuery = substr($insertQuery, 0, -1);
+            $insertLog = substr($insertLog, 0, -1);
+            $insertQuery .= "),\n";
+            $insertLog .= "),\n";
+            push @flatVals, @row;
+        }
+        $insertQuery = substr($insertQuery, 0, -2);
+        $insertLog = substr($insertLog, 0, -2);
+        $log->addLine($insertLog);
+        $dbHandler->updateWithParameters($insertQuery, \@flatVals);
+        undef @flatVals;
+    }
+
+}
+
+sub getForignKey
+{
     my $table = shift;
     my $colPos = shift;
     my $value = shift;
