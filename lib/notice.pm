@@ -537,7 +537,6 @@ sub fire
     return 0;
 }
 
-
 sub writeDB
 {
     my $self = shift;
@@ -561,6 +560,5 @@ sub writeDB
     );
     $self->doUpdateQuery($query, undef, \@vars);
 }
-
 
 1;

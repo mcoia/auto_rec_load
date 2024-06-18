@@ -165,6 +165,7 @@ sub query
         {
             my $conv = $_;
             $conv =~ s/\xa0/ /g;
+            # print "conv: [$conv]\n";
             push(@pusher, $conv);
         }
 

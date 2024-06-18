@@ -543,14 +543,7 @@ sub getRecordType
 # returns int 
 sub getOverdriveURLTitleID
 {
-
-=pod 
- This may get abstracted a little more.
- Make this a method that deletes a subfield based on some regex pattern . 
- pass in the regex, tag & the field. 
- 
-=cut
-
+    
     my $self = shift;
     my $marc = shift;
     my @overdriveURLID = ();
@@ -621,19 +614,15 @@ sub overdriveGeneric
         $self->{log}->addLine("Library: $library") if ($self->{debug});
         $self->{log}->addLine("----------------------------------------") if ($self->{debug});
 
-
-        # Some libraries don't have audio or ebook definitions 
-        next if ($config->{'libraries'}{$library}{$recordType} eq ''); ### todo: DEBUG THIS!!! I don't know if it works.
-
-        # Some libraries are not processing the marc correctly. bridges, avalon. 
-
+        # Some libraries don't have audio or ebook definitions.
+        # Now that I'm looking at this I don't think we need it.
+        # Just don't add the definition in the %config
+        next if ($config->{'libraries'}{$library}{$recordType} eq '');
 
         # loop thru our libraries 
         foreach my $tag (keys %{$config->{'libraries'}{$library}{$recordType}})
         {
 
-            # next if (%{$config->{'libraries'}{$library}{$recordType}{tag}} eq '');
-            
             print "tag: $tag\n" if ($self->{debug});
             $self->{log}->addLine("Current Tag: $tag") if ($self->{debug});
 
@@ -663,14 +652,11 @@ sub overdriveGeneric
             }
 
             print "DONE adding subfield data\n" if ($self->{debug});
-            $marc->insert_grouped_field($field) ;
+            $marc->insert_grouped_field($field);
             undef $field;
         }
 
     }
-
-    print "delete stray 856\n";
-    # $marc = $self->deleteStray856($marc); # delete stray function and consolidate? yea? 
 
     $self->{ log }->addLine("Overdrive marc edit... DONE") if ($self->{debug});
     return $marc;
@@ -983,7 +969,7 @@ sub overdrive_bridges
                     '949' => '\1$aHSSU Audio eBook$h050$lhsoiit$t019$z050$vHSSU Audio eBook'
                 },
                 # 'ebook' => {
-                    # '949' => '',
+                # '949' => '',
                 # }
             },
             'Lindenwood University'         => {

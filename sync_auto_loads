@@ -24,6 +24,105 @@ project_src_root=$cluster_src_root"/overdrive/"
 sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
 ch_array[$project_src_root]="archway"
 
+#############################################
+# Cluster: Arthur
+#############################################
+cluster_src_root=$src_root"/arthur"
+cluster_dst_root=$dst_root"/arthur/home/arthur/scheduler"
+
+#############################################
+# Cluster: Arthur
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="arthur"
+
+#############################################
+# Cluster: Avalon
+#############################################
+cluster_src_root=$src_root"/avalon"
+cluster_dst_root=$dst_root"/avalon/home/avalon/scheduler"
+
+#############################################
+# Cluster: Avalon
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="avalon"
+
+
+#############################################
+# Cluster: Bridges
+#############################################
+cluster_src_root=$src_root"/bridges"
+cluster_dst_root=$dst_root"/bridges/home/bridges/scheduler"
+
+#############################################
+# Cluster: Bridges
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="bridges"
+
+
+#############################################
+# Cluster: Explore
+#############################################
+cluster_src_root=$src_root"/explore"
+cluster_dst_root=$dst_root"/explore/home/explore/scheduler"
+
+#############################################
+# Cluster: Explore
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="explore"
+
+
+#############################################
+# Cluster: KC-Towers
+#############################################
+cluster_src_root=$src_root"/kc-towers"
+cluster_dst_root=$dst_root"/kc-towers/home/kc-towers/scheduler"
+
+#############################################
+# Cluster: KC-Towers
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="kc-towers"
+
+
+#############################################
+# Cluster: Swan
+#############################################
+cluster_src_root=$src_root"/swan"
+cluster_dst_root=$dst_root"/swan/home/swan/scheduler"
+
+#############################################
+# Cluster: Swan
+# Project: overdrive
+# Client: ALL
+#############################################
+
+project_src_root=$cluster_src_root"/overdrive/"
+sync_array[$project_src_root]=$cluster_dst_root"/overdrive"
+ch_array[$project_src_root]="swan"
 
 
 #############################################
